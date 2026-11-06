@@ -1,0 +1,68 @@
+FROM php:8.4-cli-alpine
+
+ENV MUSL_LOCPATH="/usr/share/i18n/locales/musl"
+
+RUN echo "UTC" > /etc/timezone
+
+RUN apk add --update linux-headers
+
+RUN apk add --no-cache \
+        autoconf g++ make \
+        cmake  \
+        ca-certificates \
+        gcc \
+        git \
+        git-lfs \
+        gettext \
+        gettext-dev \
+        openssh \
+        libintl \
+        libzip-dev \
+        libpng-dev \
+        libjpeg-turbo-dev \
+        libxml2-dev \
+        imagemagick-dev \
+        oniguruma-dev \
+        freetype-dev \
+        icu-dev \
+        icu-libs \
+        icu-data-full \
+        postgresql-dev \
+        zlib-dev \
+        libtool \
+        rabbitmq-c-dev \
+        tzdata
+
+RUN git lfs install
+
+RUN apk add -U shadow
+
+RUN curl -fL --output /tmp/pie.phar https://github.com/php/pie/releases/latest/download/pie.phar \
+      && mv /tmp/pie.phar /usr/local/bin/pie \
+      && chmod +x /usr/local/bin/pie
+
+RUN pie install --auto-install-build-tools php-amqp/php-amqp imagick/imagick
+
+RUN docker-php-ext-install -j$(nproc) gd pdo_pgsql gettext pdo zip bcmath intl pcntl
+
+RUN docker-php-ext-enable gd intl
+
+RUN docker-php-ext-configure gd \
+            --with-freetype=/usr/include/ \
+            --with-jpeg=/usr/include/
+
+RUN docker-php-ext-configure gettext
+RUN docker-php-ext-install gettext
+RUN docker-php-ext-enable gettext
+
+RUN cp /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+
+ENV LC_ALL ru_RU.UTF-8
+
+COPY ./docker/php/config /usr/local/etc/php/conf.d
+
+COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
+
+RUN usermod -u 1000 www-data
+
+WORKDIR /app/backend/src

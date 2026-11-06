@@ -1,0 +1,119 @@
+services:
+  sherparpa-nginx:
+    container_name: sherparpa-nginx
+    image: nginx:stable-alpine
+    volumes:
+      - ./docker/nginx/docker.conf:/etc/nginx/conf.d/custom.conf
+      - ./:/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - sherparpa-php-fpm
+
+  sherparpa-php-fpm:
+    container_name: sherparpa-php-fpm
+    build:
+      context: .
+      dockerfile: docker/php/php_fpm-dockerfile
+    volumes:
+      - ./:/app
+    depends_on:
+      - sherparpa-postgres
+    restart: unless-stopped
+    environment:
+      PHP_IDE_CONFIG: "serverName=sherparpa"
+
+  sherparpa-php-cli:
+    container_name: sherparpa-php-cli
+    build:
+      context: .
+      dockerfile: docker/php/php_cli-dockerfile
+    volumes:
+      - ./:/app
+    depends_on:
+      - sherparpa-postgres
+
+  sherparpa-postgres:
+    container_name: sherparpa-postgres
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: "db"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+    ports:
+      - "5432:5432"
+    volumes:
+      - sherparpa-db_data:/var/lib/postgresql
+      - ./docker/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh:ro
+    restart: unless-stopped
+
+  sherparpa-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: sherparpa-rabbitmq
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Web UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - sherparpa-rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sherparpa-swagger:
+    container_name: sherparpa-swagger
+    image: swaggerapi/swagger-ui:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./backend/openapi.yaml:/specs/openapi.yaml:ro
+    environment:
+      SWAGGER_JSON: /specs/openapi.yaml
+    depends_on:
+      - sherparpa-nginx
+
+  sherparpa-worker-import:
+    container_name: sherparpa-worker-import
+    build:
+      context: .
+      dockerfile: docker/php/php_cli-dockerfile
+    command: php /app/backend/bin/console app:consume import
+    tty: true
+    volumes:
+      - ./:/app
+    depends_on:
+      sherparpa-postgres:
+        condition: service_started
+      sherparpa-rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sherparpa-worker-images:
+    container_name: sherparpa-worker-images
+    build:
+      context: .
+      dockerfile: docker/php/php_cli-dockerfile
+    command: php /app/backend/bin/console app:consume images
+    tty: true
+    volumes:
+      - ./:/app
+    depends_on:
+      sherparpa-postgres:
+        condition: service_started
+      sherparpa-rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  sherparpa-db_data:
+  sherparpa-rabbitmq_data:
+
+networks:
+  default:
+    external: true
+    name: sherparpa-network
