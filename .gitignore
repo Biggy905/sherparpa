@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Phpstorm project files
+.idea
+
+# Visual studio code project files
+.vscode
+
+# Netbeans project files
+nbproject
+
+# Zend studio for eclipse project files
+.buildpath
+.project
+.settings
+
+# Windows thumbnail cache
+Thumbs.db
+
+# Mac DS_Store Files
+.DS_Store
