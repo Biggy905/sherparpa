@@ -1,0 +1,52 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use App\Console\Command\ConsumeCommand;
+use App\Console\Command\RetryFailedCommand;
+use App\Console\Command\StatusCommand;
+use DI\ContainerBuilder;
+use Doctrine\Migrations\Configuration\Connection\ExistingConnection;
+use Doctrine\Migrations\Configuration\Migration\PhpFile;
+use Doctrine\Migrations\DependencyFactory;
+use Doctrine\Migrations\Tools\Console\ConsoleRunner;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Messenger\MessageBusInterface;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+$rootDir = dirname(__DIR__);
+if (is_file(dirname($rootDir) . '/.env')) {
+    \Dotenv\Dotenv::createUnsafeImmutable(dirname($rootDir))->load();
+}
+
+// --- DI container ---
+$builder = new ContainerBuilder();
+$builder->useAutowiring(true);
+$builder->useAttributes(true);
+$builder->addDefinitions(require $rootDir . '/src/Config/container.php');
+$container = $builder->build();
+
+// --- Migrations ---
+$rootDir = dirname(__DIR__);
+$migrationsConfig = new PhpFile($rootDir . '/migrations.php');
+$connection = $container->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+$migrationsFactory = DependencyFactory::fromConnection(
+        $migrationsConfig,
+        new ExistingConnection($connection),
+);
+
+// --- Application ---
+$app = new Application('App Console');
+$app->setCatchExceptions(true);
+
+// Миграции
+ConsoleRunner::addCommands($app, $migrationsFactory);
+
+// app:* команды
+$app->add($container->get(ConsumeCommand::class));
+$app->add($container->get(RetryFailedCommand::class));
+$app->add($container->get(StatusCommand::class));
+
+$app->run();

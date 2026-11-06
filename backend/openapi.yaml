@@ -1,0 +1,234 @@
+openapi: 3.0.0
+info:
+  title: 'Import/Export API'
+  version: 1.0.0
+paths:
+  /api/health:
+    get:
+      summary: 'Health check'
+      operationId: 484bec1045abb0a8fdefbc7b84299c8f
+      responses:
+        '200':
+          description: 'Health status'
+          content:
+            application/json:
+              schema:
+                properties:
+                  status: { type: string, example: ok }
+                  db: { type: boolean }
+                  rabbitmq: { type: boolean }
+                type: object
+  /api/imports:
+    post:
+      summary: 'Upload XLSX for async import'
+      operationId: 9be55fb6caec4e6d6955e14e89119543
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                file:
+                  type: string
+                  format: binary
+              type: object
+      responses:
+        '202':
+          description: Accepted
+        '422':
+          description: 'Validation error'
+  '/api/imports/{job_id}':
+    get:
+      summary: 'Get import status'
+      operationId: d51a09d3df18f2a2c08c700cd9816c75
+      parameters:
+        -
+          name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 'Import status'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportStatus'
+        '404':
+          description: 'Not found'
+  /api/products:
+    get:
+      summary: 'List products with pagination and filters'
+      operationId: fcc56314179513ff3292336816459b3a
+      parameters:
+        -
+          name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        -
+          name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        -
+          name: name
+          in: query
+          schema:
+            type: string
+        -
+          name: price_from
+          in: query
+          schema:
+            type: number
+        -
+          name: price_to
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          description: 'Paginated list'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Paginated'
+        '422':
+          description: 'Validation error'
+  '/api/products/{id}':
+    get:
+      summary: 'Get product detail'
+      operationId: 6dc65ba695ff07df26b398fbfce756bb
+      parameters:
+        -
+          name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 'Product detail'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: 'Not found'
+components:
+  schemas:
+    ImportStatus:
+      required:
+        - job_id
+        - status
+        - stage
+        - products
+        - images
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pending
+            - processing
+            - completed
+            - failed
+        stage:
+          type: string
+          enum:
+            - products
+            - images
+            - done
+            - failed
+        products:
+          type: object
+        images:
+          type: object
+      type: object
+    Paginated:
+      required:
+        - items
+        - page
+        - limit
+        - total
+        - total_pages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 100
+        total_pages:
+          type: integer
+          example: 5
+      type: object
+    ProductImage:
+      required:
+        - url
+        - type
+      properties:
+        url:
+          type: string
+          example: 'http://...'
+        path:
+          type: string
+          example: images/42.jpg
+          nullable: true
+        type:
+          type: string
+          enum:
+            - photo
+            - packaging
+      type: object
+    Product:
+      required:
+        - id
+        - external_code
+        - name
+        - price
+        - discount
+      properties:
+        id:
+          type: integer
+          example: 1
+        external_code:
+          type: string
+          example: 3UHfAid1jaMiwgBuNvnsf3
+        name:
+          type: string
+          example: 'Бермуды мужские'
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+          format: float
+          example: 1320
+        discount:
+          type: number
+          format: float
+          example: 33.33
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImage'
+      type: object
