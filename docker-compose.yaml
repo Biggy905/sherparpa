@@ -33,6 +33,32 @@ services:
     depends_on:
       - sherparpa-postgres
 
+  sherparpa-frontend-install:
+    container_name: sherparpa-frontend-install
+    image: node:22-alpine
+    working_dir: /app/frontend
+    volumes:
+      - ./:/app
+    command: npm ci
+    restart: "no"
+
+  sherparpa-frontend:
+    container_name: sherparpa-frontend
+    image: node:22-alpine
+    volumes:
+      - ./:/app
+    environment:
+      NG_CLI_ANALYTICS: "false"
+    working_dir: /app/frontend
+    command: npm start -- --host=0.0.0.0 --poll 1000
+    tty: true
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+    depends_on:
+      sherparpa-frontend-install:
+        condition: service_completed_successfully
+
   sherparpa-postgres:
     container_name: sherparpa-postgres
     image: postgres:18-alpine
