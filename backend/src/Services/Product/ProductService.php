@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Product;
 
-use App\Entities\Product;
-use App\Exceptions\ProductNotFoundException;
 use App\Forms\FilterProductForm;
 use App\Groups\PaginatedGroup;
 use App\Groups\ProductItemGroup;

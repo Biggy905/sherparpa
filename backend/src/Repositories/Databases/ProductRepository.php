@@ -60,11 +60,13 @@ final readonly class ProductRepository implements ProductRepositoryInterface
 
     public function count(ProductQuery $query): int
     {
-        $result = $query->build()
+        $qb = $query->build()
             ->select('COUNT(p.id)')
             ->resetDQLPart('orderBy')
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setMaxResults(null)
+            ->setFirstResult(0);
+
+        $result = $qb->getQuery()->getSingleScalarResult();
 
         \assert(\is_int($result) || \is_string($result));
 

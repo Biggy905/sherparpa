@@ -41,7 +41,7 @@ final readonly class ImportController
     {
         $data = $this->uploadService->handle($request);
 
-        $response->getBody()->write((string) \json_encode($data, \JSON_THROW_ON_ERROR));
+        $response->getBody()->write((string) \json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
         $response = $response->withStatus(202);
 
         return $response->withHeader('Content-Type', 'application/json');
@@ -70,7 +70,7 @@ final readonly class ImportController
     {
         $jobId = (string) ($args['job_id'] ?? '');
         $group = $this->statusService->getStatus($jobId);
-        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR));
+        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
 
         return $response->withHeader('Content-Type', 'application/json');
     }

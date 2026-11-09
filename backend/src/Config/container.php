@@ -83,13 +83,13 @@ return [
         return new HealthCheckService($em->getConnection(), $host, $port);
     },
 
-    ImportUploadService::class => static function (\Psr\Container\ContainerInterface $c) use ($rootDir): ImportUploadService {
+    ImportUploadService::class => static function (\Psr\Container\ContainerInterface $c) use ($appDir): ImportUploadService {
         $repo = $c->get(WorkerJobRepositoryInterface::class);
         \assert($repo instanceof WorkerJobRepositoryInterface);
 
         $bus = $c->get(MessageBusInterface::class);
         \assert($bus instanceof MessageBusInterface);
 
-        return new ImportUploadService($repo, $bus, $rootDir . '/var/storage');
+        return new ImportUploadService($repo, $bus, $appDir . '/var/storage');
     },
 ];

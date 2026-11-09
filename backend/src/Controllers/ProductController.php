@@ -50,7 +50,7 @@ final readonly class ProductController
         }
 
         $group = $this->productService->getList($form);
-        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR));
+        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
 
         return $response->withHeader('Content-Type', 'application/json');
     }
@@ -77,7 +77,7 @@ final readonly class ProductController
     {
         $id = (int) ($args['id'] ?? 0);
         $group = $this->productService->getDetail($id);
-        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR));
+        $response->getBody()->write((string) \json_encode($group->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
 
         return $response->withHeader('Content-Type', 'application/json');
     }

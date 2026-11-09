@@ -1,4 +1,4 @@
-import { AsyncPipe, DecimalPipe } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import {
   Component,
   ElementRef,
@@ -28,7 +28,6 @@ type UploadState = 'idle' | 'uploading' | 'polling';
   selector: 'app-import',
   standalone: true,
   imports: [
-    AsyncPipe,
     DecimalPipe,
     RouterLink,
     MatButtonModule,
@@ -68,7 +67,7 @@ type UploadState = 'idle' | 'uploading' | 'polling';
                 mat-stroked-button
                 type="button"
                 (click)="fileInput.click()"
-                [disabled]="state === 'uploading'"
+                [disabled]="isUploading"
               >
                 <mat-icon>attach_file</mat-icon>
                 Выбрать файл
@@ -86,9 +85,9 @@ type UploadState = 'idle' | 'uploading' | 'polling';
                 color="primary"
                 type="button"
                 (click)="upload()"
-                [disabled]="!selectedFile || state === 'uploading'"
+                [disabled]="!selectedFile || isUploading"
               >
-                @if (state === 'uploading') {
+                @if (isUploading) {
                   <ng-container>Загрузка…</ng-container>
                 } @else {
                   <ng-container>Загрузить</ng-container>
@@ -372,6 +371,14 @@ export class ImportComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
+  }
+
+  get isUploading(): boolean {
+    return this.state === 'uploading';
+  }
+
+  get isPolling(): boolean {
+    return this.state === 'polling';
   }
 
   onFileSelected(event: Event): void {

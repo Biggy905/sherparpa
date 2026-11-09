@@ -35,8 +35,8 @@ final readonly class ProductItemGroup implements GroupInterface
             'external_code' => $this->product->getExternalCode(),
             'name' => $this->product->getName(),
             'description' => $this->product->getDescription(),
-            'price' => (float) $this->product->getPrice(),
-            'discount' => (float) $this->product->getDiscount(),
+            'price' => $this->product->getPrice(),
+            'discount' => $this->product->getDiscount(),
             'attributes' => $attributes,
             'images' => $images,
         ];

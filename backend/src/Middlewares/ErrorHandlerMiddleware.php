@@ -36,7 +36,7 @@ final readonly class ErrorHandlerMiddleware implements MiddlewareInterface
     private function json(int $status, array $data): ResponseInterface
     {
         $response = new Response($status);
-        $response->getBody()->write((string) \json_encode($data, \JSON_THROW_ON_ERROR));
+        $response->getBody()->write((string) \json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
 
         return $response->withHeader('Content-Type', 'application/json');
     }
