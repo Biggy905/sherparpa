@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Factories;
 
-use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpTransport;
 use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpTransportFactory;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Transport\TransportInterface;

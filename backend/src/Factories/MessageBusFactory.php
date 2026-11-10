@@ -11,6 +11,7 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\SendMessageMiddleware;
+use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 use Symfony\Component\Messenger\Transport\Sender\SendersLocatorInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
@@ -29,11 +30,10 @@ final readonly class MessageBusFactory
         $importTransport = $transportFactory->createTransport($this->rabbitMqDsn . '/import', [], $serializer);
         $imagesTransport = $transportFactory->createTransport($this->rabbitMqDsn . '/images', [], $serializer);
 
-        // Свой локатор: просто возвращает готовые транспорты, без контейнеров и алиасов
         $sendersLocator = new class ($importTransport, $imagesTransport) implements SendersLocatorInterface {
             public function __construct(
-                private readonly \Symfony\Component\Messenger\Transport\Sender\SenderInterface $importTransport,
-                private readonly \Symfony\Component\Messenger\Transport\Sender\SenderInterface $imagesTransport,
+                private readonly SenderInterface $importTransport,
+                private readonly SenderInterface $imagesTransport,
             ) {}
 
             public function getSenders(Envelope $envelope): iterable

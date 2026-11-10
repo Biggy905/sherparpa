@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Import;
 
-use App\DTO\WorkerMessage\ImportMessage;
 use App\DTO\WorkerMessage\ImportRowError;
 use App\DTO\WorkerMessage\ImageDownloadMessage;
 use App\DTO\XlsxRow;
@@ -78,22 +77,15 @@ final readonly class ImportService
 
         foreach ($parsed['rows'] as $row) {
             try {
-                $imageIds = [];
-
                 // 1. Открываем транзакцию вручную
                 $this->em->beginTransaction();
 
-                try {
-                    // 2. Обрабатываем строку. processRow вернет массив ID картинок.
-                    $imageIds = $this->processRow($row, $jobId);
+                // 2. Обрабатываем строку. processRow вернет массив ID картинок.
+                $imageIds = $this->processRow($row, $jobId);
 
-                    // 3. Коммитим транзакцию (товар и картинки сохраняются в БД)
-                    $this->em->flush();
-                    $this->em->commit();
-                } catch (\Throwable $e) {
-                    $this->em->rollback();
-                    throw $e; // Пробрасываем наверх, чтобы логгер записал ошибку
-                }
+                // 3. Коммитим транзакцию (товар и картинки сохраняются в БД)
+                $this->em->flush();
+                $this->em->commit();
 
                 // 4. Отправляем сообщения ТОЛЬКО ПОСЛЕ КОММИТА!
                 foreach ($imageIds as $imageId) {
