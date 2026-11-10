@@ -41,11 +41,11 @@ final readonly class MessageBusFactory
                 $message = $envelope->getMessage();
 
                 if ($message instanceof ImportProductsMessage) {
-                    yield $this->importTransport;
+                    yield 'import' => $this->importTransport;
                 }
 
                 if ($message instanceof DownloadProductImageMessage) {
-                    yield $this->imagesTransport;
+                    yield 'images' => $this->imagesTransport;
                 }
             }
         };
