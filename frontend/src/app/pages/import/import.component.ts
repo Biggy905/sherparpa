@@ -5,24 +5,30 @@ import {
   inject,
   OnDestroy,
   OnInit,
+  signal,
   ViewChild,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { MatExpansionModule } from '@angular/material/expansion';
-import { MatDividerModule } from '@angular/material/divider';
-import { MatChipsModule } from '@angular/material/chips';
 import { Subscription } from 'rxjs';
 
 import { ApiError } from '../../models/api-error.model';
 import { ImportStatus } from '../../models/import.model';
 import { ImportService } from '../../services/import.service';
 
-type UploadState = 'idle' | 'uploading' | 'polling';
+interface JobEntry {
+  jobId: string;
+  status: ImportStatus | null;
+  isPolling: boolean;
+  fatalError: string | null;
+  createdAt: number;
+}
 
 @Component({
   selector: 'app-import',
@@ -32,188 +38,241 @@ type UploadState = 'idle' | 'uploading' | 'polling';
     RouterLink,
     MatButtonModule,
     MatCardModule,
+    MatDividerModule,
+    MatExpansionModule,
     MatIconModule,
     MatProgressBarModule,
-    MatExpansionModule,
-    MatDividerModule,
-    MatChipsModule,
   ],
   template: `
     <div class="page-header">
       <h2>Импорт товаров</h2>
     </div>
 
-    <!-- ============ Состояние 1: нет активного импорта ============ -->
-    @if (state === 'idle') {
-      <mat-card class="upload-card">
-        <mat-card-content>
-          <div class="upload-zone">
-            <mat-icon class="upload-icon">upload_file</mat-icon>
-            <p class="upload-title">Загрузите файл .xlsx</p>
-            <p class="upload-hint">
-              Максимум 20 МБ. Файл обрабатывается асинхронно — статус появится ниже.
-            </p>
+    <!-- ================= Форма загрузки — всегда сверху ================= -->
+    <mat-card class="upload-card">
+      <mat-card-content>
+        <div class="upload-zone">
+          <mat-icon class="upload-icon">upload_file</mat-icon>
+          <p class="upload-title">Загрузите файл .xlsx</p>
+          <p class="upload-hint">
+            Максимум 20 МБ. Каждый импорт обрабатывается независимо — можно
+            запускать несколько.
+          </p>
 
-            <input
-              #fileInput
-              type="file"
-              accept=".xlsx"
-              hidden
-              (change)="onFileSelected($event)"
-            />
+          <input
+            #fileInput
+            type="file"
+            accept=".xlsx"
+            hidden
+            (change)="onFileSelected($event)"
+          />
 
-            <div class="upload-actions">
-              <button
-                mat-stroked-button
-                type="button"
-                (click)="fileInput.click()"
-                [disabled]="isUploading"
-              >
-                <mat-icon>attach_file</mat-icon>
-                Выбрать файл
-              </button>
+          <div class="upload-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="fileInput.click()"
+              [disabled]="isUploading()"
+            >
+              <mat-icon>attach_file</mat-icon>
+              Выбрать файл
+            </button>
 
-              @if (selectedFile) {
-                <span class="file-info">
-                  {{ selectedFile.name }}
-                  ({{ selectedFile.size / 1024 / 1024 | number: '1.1-1' }} МБ)
-                </span>
+            @if (selectedFile()) {
+              <span class="file-info">
+                {{ selectedFile()!.name }}
+                ({{ selectedFile()!.size / 1024 / 1024 | number: '1.1-1' }} МБ)
+              </span>
+            }
+
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              (click)="upload()"
+              [disabled]="!selectedFile() || isUploading()"
+            >
+              @if (isUploading()) {
+                Загрузка…
+              } @else {
+                Загрузить
               }
-
-              <button
-                mat-flat-button
-                color="primary"
-                type="button"
-                (click)="upload()"
-                [disabled]="!selectedFile || isUploading"
-              >
-                @if (isUploading) {
-                  <ng-container>Загрузка…</ng-container>
-                } @else {
-                  <ng-container>Загрузить</ng-container>
-                }
-              </button>
-            </div>
-          </div>
-        </mat-card-content>
-      </mat-card>
-    }
-
-    <!-- ============ Состояние 2/3: активный или завершённый импорт ============ -->
-    @if (state === 'polling' && status) {
-      <mat-card class="status-card">
-        <mat-card-content>
-          <div class="status-header">
-            <div>
-              <h3>
-                Импорт
-                <code class="job-id">{{ status.job_id }}</code>
-              </h3>
-              <p class="overall-status">
-                Статус:
-                <strong [class]="'status-' + status.status">
-                  {{ statusLabel(status.status) }}
-                </strong>
-                · Этап: <strong>{{ stageLabel(status.stage) }}</strong>
-              </p>
-            </div>
-            <button mat-stroked-button type="button" (click)="startNewImport()">
-              <mat-icon>refresh</mat-icon>
-              Новый импорт
             </button>
           </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
 
-          <!-- Этап 1: Товары -->
-          <section class="stage-block">
-            <div class="stage-title">
-              <span>Этап 1: Товары</span>
-              <span class="stage-status status-{{ status.products.status }}">
-                {{ statusLabel(status.products.status) }}
-              </span>
-            </div>
-
-            <mat-progress-bar
-              [mode]="status.products.status === 'completed' || status.products.status === 'failed' ? 'determinate' : 'indeterminate'"
-              [value]="status.products.progress_percent"
-            />
-            <div class="progress-meta">
-              <span>
-                {{ status.products.processed }} / {{ status.products.total }}
-                ({{ status.products.progress_percent }}%)
-              </span>
-              <span class="counters">
-                Успешно: {{ status.products.processed - status.products.failed }}
-                · Ошибок: {{ status.products.failed }}
-              </span>
-            </div>
-
-            @if (status.products.errors.length > 0) {
-              <mat-expansion-panel class="errors-panel">
-                <mat-expansion-panel-header>
-                  <mat-panel-title>
-                    <mat-icon class="error-icon">warning</mat-icon>
-                    Ошибки строк ({{ status.products.errors.length }})
-                  </mat-panel-title>
-                </mat-expansion-panel-header>
-                <ul class="errors-list">
-                  @for (err of status.products.errors; track err.row) {
-                    <li>
-                      <strong>Строка {{ err.row }}:</strong> {{ err.message }}
-                    </li>
+    <!-- ================= Список импортов ================= -->
+    @if (jobs().length === 0) {
+      <div class="empty-state">
+        <mat-icon>inbox</mat-icon>
+        <p>Активных импортов нет. Загрузите файл, чтобы начать.</p>
+      </div>
+    } @else {
+      <div class="jobs-list">
+        @for (job of jobs(); track job.jobId) {
+          <mat-card class="job-card">
+            <mat-card-content>
+              <div class="job-header">
+                <div>
+                  <h3>
+                    Импорт
+                    <code class="job-id">{{ shortId(job.jobId) }}</code>
+                  </h3>
+                  @if (job.status) {
+                    <p class="overall-status">
+                      Статус:
+                      <strong [class]="'status-' + job.status.status">
+                        {{ statusLabel(job.status.status) }}
+                      </strong>
+                      · Этап:
+                      <strong>{{ stageLabel(job.status.stage) }}</strong>
+                    </p>
+                  } @else if (job.fatalError) {
+                    <p class="overall-status status-failed">
+                      {{ job.fatalError }}
+                    </p>
+                  } @else {
+                    <p class="overall-status">Получаем статус…</p>
                   }
-                </ul>
-              </mat-expansion-panel>
-            }
-          </section>
+                </div>
+                <div class="job-actions">
+                  @if (job.status?.status === 'completed') {
+                    <button
+                      mat-flat-button
+                      color="primary"
+                      routerLink="/products"
+                    >
+                      К товарам
+                      <mat-icon>arrow_forward</mat-icon>
+                    </button>
+                  }
+                  @if (
+                    job.status?.status === 'completed' ||
+                    job.status?.status === 'failed' ||
+                    job.fatalError
+                    ) {
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      (click)="dismiss(job.jobId)"
+                    >
+                      <mat-icon>close</mat-icon>
+                      Убрать
+                    </button>
+                  }
+                </div>
+              </div>
 
-          <mat-divider />
+              @if (job.status) {
+                <!-- Этап 1: Товары -->
+                <section class="stage-block">
+                  <div class="stage-title">
+                    <span>Этап 1: Товары</span>
+                    <span class="stage-status status-{{ job.status.products.status }}">
+                      {{ statusLabel(job.status.products.status) }}
+                    </span>
+                  </div>
 
-          <!-- Этап 2: Изображения -->
-          <section class="stage-block">
-            <div class="stage-title">
-              <span>Этап 2: Изображения</span>
-              <span class="stage-status">
-                Скачано {{ status.images.completed }} / {{ status.images.total }}
-              </span>
-            </div>
+                  <mat-progress-bar
+                    [mode]="
+                      job.status.products.status === 'completed' ||
+                      job.status.products.status === 'failed'
+                        ? 'determinate'
+                        : 'indeterminate'
+                    "
+                    [value]="job.status.products.progress_percent"
+                  />
+                  <div class="progress-meta">
+                    <span>
+                      {{ job.status.products.processed }} /
+                      {{ job.status.products.total }}
+                      ({{ job.status.products.progress_percent }}%)
+                    </span>
+                    <span>
+                      Успешно:
+                      {{
+                        job.status.products.processed -
+                        job.status.products.failed
+                      }}
+                      · Ошибок: {{ job.status.products.failed }}
+                    </span>
+                  </div>
 
-            <mat-progress-bar
-              [mode]="imagesProgressMode(status.images.total, status.images.completed + status.images.failed)"
-              [value]="imagesPercent()"
-            />
-            <div class="progress-meta">
-              <span>
-                {{ status.images.completed }} / {{ status.images.total }}
-                ({{ imagesPercent() }}%)
-              </span>
-              <span class="counters">
-                В очереди: {{ status.images.pending }}
-                · В процессе: {{ status.images.processing }}
-                · Ошибок: {{ status.images.failed }}
-              </span>
-            </div>
-          </section>
+                  @if (job.status.products.errors.length > 0) {
+                    <mat-expansion-panel class="errors-panel">
+                      <mat-expansion-panel-header>
+                        <mat-panel-title>
+                          <mat-icon class="error-icon">warning</mat-icon>
+                          Ошибки строк ({{ job.status.products.errors.length }})
+                        </mat-panel-title>
+                      </mat-expansion-panel-header>
+                      <ul class="errors-list">
+                        @for (err of job.status.products.errors; track err.row) {
+                          <li>
+                            <strong>Строка {{ err.row }}:</strong>
+                            {{ err.message }}
+                          </li>
+                        }
+                      </ul>
+                    </mat-expansion-panel>
+                  }
+                </section>
 
-          @if (status.status === 'completed') {
-            <div class="completed-actions">
-              <mat-icon class="success-icon">check_circle</mat-icon>
-              <span>Импорт завершён</span>
-              <span class="spacer"></span>
-              <button mat-flat-button color="primary" routerLink="/products">
-                Перейти к списку товаров
-                <mat-icon>arrow_forward</mat-icon>
-              </button>
-            </div>
-          }
+                <mat-divider />
 
-          @if (status.status === 'failed') {
-            <div class="failed-banner">
-              <mat-icon>error</mat-icon>
-              <span>Импорт завершился с ошибкой. Проверьте отчёт выше.</span>
-            </div>
-          }
-        </mat-card-content>
-      </mat-card>
+                <!-- Этап 2: Изображения -->
+                <section class="stage-block">
+                  <div class="stage-title">
+                    <span>Этап 2: Изображения</span>
+                    <span class="stage-status">
+                      Скачано {{ job.status.images.completed }} /
+                      {{ job.status.images.total }}
+                    </span>
+                  </div>
+
+                  <mat-progress-bar
+                    [mode]="
+                      job.status.images.total === 0 ||
+                      job.status.images.completed + job.status.images.failed <
+                        job.status.images.total
+                        ? 'indeterminate'
+                        : 'determinate'
+                    "
+                    [value]="imagesPercent(job.status)"
+                  />
+                  <div class="progress-meta">
+                    <span>
+                      {{ job.status.images.completed }} /
+                      {{ job.status.images.total }}
+                      ({{ imagesPercent(job.status) }}%)
+                    </span>
+                    <span>
+                      В очереди: {{ job.status.images.pending }}
+                      · В процессе: {{ job.status.images.processing }}
+                      · Ошибок: {{ job.status.images.failed }}
+                    </span>
+                  </div>
+                </section>
+
+                @if (job.status.status === 'completed') {
+                  <div class="completed-banner">
+                    <mat-icon>check_circle</mat-icon>
+                    <span>Импорт завершён</span>
+                  </div>
+                }
+                @if (job.status.status === 'failed') {
+                  <div class="failed-banner">
+                    <mat-icon>error</mat-icon>
+                    <span>Импорт завершился с ошибкой</span>
+                  </div>
+                }
+              }
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
     }
   `,
   styles: [
@@ -221,18 +280,17 @@ type UploadState = 'idle' | 'uploading' | 'polling';
       .page-header h2 {
         margin: 0 0 16px 0;
       }
-      .upload-card,
-      .status-card {
-        margin-bottom: 16px;
+      .upload-card {
+        margin-bottom: 24px;
       }
       .upload-zone {
         text-align: center;
-        padding: 48px 16px;
+        padding: 32px 16px;
       }
       .upload-icon {
-        font-size: 64px;
-        width: 64px;
-        height: 64px;
+        font-size: 56px;
+        width: 56px;
+        height: 56px;
         color: var(--mat-sys-primary);
         margin-bottom: 8px;
       }
@@ -243,7 +301,7 @@ type UploadState = 'idle' | 'uploading' | 'polling';
       }
       .upload-hint {
         color: var(--mat-sys-on-surface-variant);
-        margin-bottom: 24px;
+        margin-bottom: 20px;
       }
       .upload-actions {
         display: flex;
@@ -256,15 +314,36 @@ type UploadState = 'idle' | 'uploading' | 'polling';
         color: var(--mat-sys-on-surface-variant);
         font-size: 14px;
       }
-      .status-header {
+      .empty-state {
+        text-align: center;
+        padding: 48px 16px;
+        color: var(--mat-sys-on-surface-variant);
+      }
+      .empty-state mat-icon {
+        font-size: 48px;
+        width: 48px;
+        height: 48px;
+        margin-bottom: 8px;
+      }
+      .jobs-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .job-header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
         gap: 16px;
-        margin-bottom: 24px;
+        margin-bottom: 16px;
       }
-      .status-header h3 {
+      .job-header h3 {
         margin: 0 0 4px 0;
+      }
+      .job-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
       }
       .job-id {
         font-size: 12px;
@@ -316,28 +395,22 @@ type UploadState = 'idle' | 'uploading' | 'polling';
       .errors-list li {
         margin-bottom: 4px;
       }
-      .completed-actions {
+      .completed-banner {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-top: 24px;
-        padding: 16px;
+        margin-top: 16px;
+        padding: 12px 16px;
         background: var(--mat-sys-primary-container);
         color: var(--mat-sys-on-primary-container);
         border-radius: 8px;
-      }
-      .success-icon {
-        color: var(--mat-sys-primary);
-      }
-      .spacer {
-        flex: 1;
       }
       .failed-banner {
         display: flex;
         align-items: center;
         gap: 12px;
         margin-top: 16px;
-        padding: 16px;
+        padding: 12px 16px;
         background: var(--mat-sys-error-container);
         color: var(--mat-sys-on-error-container);
         border-radius: 8px;
@@ -352,33 +425,27 @@ type UploadState = 'idle' | 'uploading' | 'polling';
 export class ImportComponent implements OnInit, OnDestroy {
   private readonly importService = inject(ImportService);
   private readonly snack = inject(MatSnackBar);
-  private readonly router = inject(Router);
 
   @ViewChild('fileInput') fileInputRef?: ElementRef<HTMLInputElement>;
 
-  state: UploadState = 'idle';
-  selectedFile: File | null = null;
-  status: ImportStatus | null = null;
+  readonly jobs = signal<JobEntry[]>([]);
+  readonly selectedFile = signal<File | null>(null);
+  readonly isUploading = signal(false);
 
-  private pollSub?: Subscription;
+  private readonly subscriptions = new Map<string, Subscription>();
 
   ngOnInit(): void {
-    const lastJobId = this.importService.getLastJob();
-    if (lastJobId) {
-      this.startPolling(lastJobId);
+    const jobIds = this.importService.getJobs();
+    for (const jobId of jobIds) {
+      this.startPolling(jobId);
     }
   }
 
   ngOnDestroy(): void {
-    this.pollSub?.unsubscribe();
-  }
-
-  get isUploading(): boolean {
-    return this.state === 'uploading';
-  }
-
-  get isPolling(): boolean {
-    return this.state === 'polling';
+    for (const sub of this.subscriptions.values()) {
+      sub.unsubscribe();
+    }
+    this.subscriptions.clear();
   }
 
   onFileSelected(event: Event): void {
@@ -386,54 +453,57 @@ export class ImportComponent implements OnInit, OnDestroy {
     const file = input.files?.[0] ?? null;
 
     if (!file) {
-      this.selectedFile = null;
+      this.selectedFile.set(null);
       return;
     }
 
     if (!file.name.toLowerCase().endsWith('.xlsx')) {
       this.snack.open('Только файлы .xlsx', 'OK', { duration: 4000 });
-      this.selectedFile = null;
+      this.selectedFile.set(null);
       if (this.fileInputRef) this.fileInputRef.nativeElement.value = '';
       return;
     }
 
     if (file.size > 20 * 1024 * 1024) {
       this.snack.open('Файл больше 20 МБ', 'OK', { duration: 4000 });
-      this.selectedFile = null;
+      this.selectedFile.set(null);
       if (this.fileInputRef) this.fileInputRef.nativeElement.value = '';
       return;
     }
 
-    this.selectedFile = file;
+    this.selectedFile.set(file);
   }
 
   upload(): void {
-    if (!this.selectedFile) return;
+    const file = this.selectedFile();
+    if (!file || this.isUploading()) return;
 
-    this.state = 'uploading';
+    this.isUploading.set(true);
 
-    this.importService.upload(this.selectedFile).subscribe({
+    this.importService.upload(file).subscribe({
       next: (response) => {
-        this.importService.saveLastJob(response.job_id);
-        this.selectedFile = null;
+        this.isUploading.set(false);
+        this.selectedFile.set(null);
         if (this.fileInputRef) this.fileInputRef.nativeElement.value = '';
+        this.importService.addJob(response.job_id);
         this.startPolling(response.job_id);
       },
       error: (err: ApiError) => {
-        this.state = 'idle';
-        // 422 уже показан в interceptor; для остальных — на всякий случай
+        this.isUploading.set(false);
         if (!err.fieldErrors && err.status !== 422) {
-          this.snack.open(err.message ?? 'Ошибка загрузки', 'OK', { duration: 4000 });
+          this.snack.open(err.message ?? 'Ошибка загрузки', 'OK', {
+            duration: 4000,
+          });
         }
       },
     });
   }
 
-  startNewImport(): void {
-    this.pollSub?.unsubscribe();
-    this.importService.clearLastJob();
-    this.status = null;
-    this.state = 'idle';
+  dismiss(jobId: string): void {
+    this.subscriptions.get(jobId)?.unsubscribe();
+    this.subscriptions.delete(jobId);
+    this.importService.removeJob(jobId);
+    this.jobs.update((list) => list.filter((j) => j.jobId !== jobId));
   }
 
   statusLabel(status: string): string {
@@ -456,53 +526,73 @@ export class ImportComponent implements OnInit, OnDestroy {
     return map[stage] ?? stage;
   }
 
-  imagesPercent(): number {
-    if (!this.status || this.status.images.total === 0) return 0;
+  shortId(jobId: string): string {
+    return jobId.slice(0, 8);
+  }
+
+  imagesPercent(status: ImportStatus): number {
+    if (status.images.total === 0) return 0;
     return Math.round(
-      ((this.status.images.completed + this.status.images.failed) /
-        this.status.images.total) *
+      ((status.images.completed + status.images.failed) /
+        status.images.total) *
       100,
     );
   }
 
-  imagesProgressMode(
-    total: number,
-    done: number,
-  ): 'determinate' | 'indeterminate' {
-    if (total === 0) return 'indeterminate';
-    return done >= total ? 'determinate' : 'indeterminate';
-  }
-
   private startPolling(jobId: string): void {
-    this.pollSub?.unsubscribe();
-    this.state = 'polling';
-    this.status = null;
+    this.subscriptions.get(jobId)?.unsubscribe();
 
-    this.pollSub = this.importService.poll(jobId).subscribe({
+    // добавляем запись в список, если её ещё нет
+    if (!this.jobs().some((j) => j.jobId === jobId)) {
+      this.jobs.update((list) => [
+        {
+          jobId,
+          status: null,
+          isPolling: true,
+          fatalError: null,
+          createdAt: Date.now(),
+        },
+        ...list,
+      ]);
+    }
+
+    const sub = this.importService.poll(jobId, 3000).subscribe({
       next: (status) => {
-        this.status = status;
+        this.jobs.update((list) =>
+          list.map((j) =>
+            j.jobId === jobId ? { ...j, status, isPolling: true } : j,
+          ),
+        );
       },
       error: (err: ApiError) => {
         if (err.status === 404) {
-          this.importService.clearLastJob();
-          this.status = null;
-          this.state = 'idle';
-          this.snack.open('Импорт не найден, загрузите новый', 'OK', {
-            duration: 5000,
-          });
-        } else {
-          // Прочие ошибки interceptor уже показал. Не сбрасываем состояние —
-          // можно попробовать снова (poll сам делает backoff).
-          this.snack.open(
-            'Не удалось получить статус импорта. Пробуем снова…',
-            'OK',
-            { duration: 4000 },
+          this.importService.removeJob(jobId);
+          this.jobs.update((list) =>
+            list.map((j) =>
+              j.jobId === jobId
+                ? {
+                  ...j,
+                  isPolling: false,
+                  fatalError: 'Импорт не найден на сервере',
+                }
+                : j,
+            ),
           );
+          this.snack.open('Импорт не найден на сервере', 'OK', {
+            duration: 4000,
+          });
         }
+        // прочие ошибки poll сам ретраит с backoff
       },
       complete: () => {
-        // poll завершается на completed/failed — оставляем status на экране
+        this.jobs.update((list) =>
+          list.map((j) =>
+            j.jobId === jobId ? { ...j, isPolling: false } : j,
+          ),
+        );
       },
     });
+
+    this.subscriptions.set(jobId, sub);
   }
 }

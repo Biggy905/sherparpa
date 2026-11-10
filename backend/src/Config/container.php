@@ -59,14 +59,11 @@ return [
 
     Client::class => \DI\autowire(),
 
-    ImageDownloader::class => static function (\Psr\Container\ContainerInterface $c): ImageDownloader {
+    ImageDownloader::class => static function (\Psr\Container\ContainerInterface $c) use ($appDir): ImageDownloader {
         $client = $c->get(Client::class);
         \assert($client instanceof Client);
 
-        $rootDir = $c->get('rootDir');
-        \assert(\is_string($rootDir));
-
-        return new ImageDownloader($client, $rootDir . '/var/storage');
+        return new ImageDownloader($client, $appDir . '/var/storage');
     },
     ValidatorInterface::class => static fn (): ValidatorInterface => (new ValidatorFactory())->create(),
 

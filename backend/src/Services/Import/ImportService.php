@@ -6,6 +6,7 @@ namespace App\Services\Import;
 
 use App\DTO\WorkerMessage\ImportMessage;
 use App\DTO\WorkerMessage\ImportRowError;
+use App\DTO\WorkerMessage\ImageDownloadMessage;
 use App\DTO\XlsxRow;
 use App\Entities\Product;
 use App\Entities\ProductAttribute;
@@ -77,20 +78,34 @@ final readonly class ImportService
 
         foreach ($parsed['rows'] as $row) {
             try {
-                $this->em->wrapInTransaction(function () use ($row, $jobId): void {
-                    $this->processRow($row, $jobId);
-                });
-            } catch (\Throwable $e) {
-                $this->logger->warning('Import row failed', [
-                    'row' => $row->rowNumber,
-                    'exception' => $e,
-                ]);
+                $imageIds = [];
 
+                // 1. Открываем транзакцию вручную
+                $this->em->beginTransaction();
+
+                try {
+                    // 2. Обрабатываем строку. processRow вернет массив ID картинок.
+                    $imageIds = $this->processRow($row, $jobId);
+
+                    // 3. Коммитим транзакцию (товар и картинки сохраняются в БД)
+                    $this->em->flush();
+                    $this->em->commit();
+                } catch (\Throwable $e) {
+                    $this->em->rollback();
+                    throw $e; // Пробрасываем наверх, чтобы логгер записал ошибку
+                }
+
+                // 4. Отправляем сообщения ТОЛЬКО ПОСЛЕ КОММИТА!
+                foreach ($imageIds as $imageId) {
+                    $this->logger->info('Dispatch image', ['id' => $imageId]); // Добавим лог для проверки
+                    $this->bus->dispatch(new DownloadProductImageMessage($imageId));
+                }
+            } catch (\Throwable $e) {
+                $this->logger->error('Ошибка в строке ' . $row->rowNumber . ': ' . $e->getMessage());
                 $errors[] = new ImportRowError($row->rowNumber, $e->getMessage());
                 ++$failed;
             } finally {
                 ++$processed;
-
                 $job->updatePayload(
                     $job->getImportPayload()
                         ->withProcessedRows($processed)
@@ -105,7 +120,10 @@ final readonly class ImportService
         $this->workerJobRepository->save($job);
     }
 
-    private function processRow(XlsxRow $row, string $jobId): void
+    /**
+     * @return list<int> ID картинок для скачивания
+     */
+    private function processRow(XlsxRow $row, string $jobId): array
     {
         $product = $this->productRepository->findOneOrNull(
             (new ProductQuery($this->em))->byExternalCode($row->externalCode),
@@ -120,6 +138,21 @@ final readonly class ImportService
                 $row->discount,
             );
             $this->productRepository->save($product, false);
+            $this->em->flush(); // Получаем ID товара для связей
+        } else {
+            // Если товар существует, нативно чистим старые атрибуты и картинки,
+            // чтобы избежать конфликта Unique constraint при INSERT
+            $this->em->getConnection()->executeStatement(
+                'DELETE FROM product_attributes WHERE product_id = ?',
+                [$product->getId()]
+            );
+            $this->em->getConnection()->executeStatement(
+                'DELETE FROM product_images WHERE product_id = ?',
+                [$product->getId()]
+            );
+            // Очищаем коллекции в сущности, чтобы Doctrine знала об этом
+            $product->getAttributes()->clear();
+            $product->getImages()->clear();
         }
 
         $attributes = [];
@@ -147,12 +180,16 @@ final readonly class ImportService
         $this->productRepository->save($product, false);
         $this->em->flush();
 
+        /** @var list<int> $imageIds */
+        $imageIds = [];
+
         foreach ($product->getImages() as $image) {
             \assert($image->getId() > 0);
+            $imageIds[] = $image->getId();
 
             $imageJob = new WorkerJob(
                 WorkerJobType::ImageDownload,
-                new \App\DTO\WorkerMessage\ImageDownloadMessage($image->getId()),
+                new ImageDownloadMessage($image->getId()),
                 $jobId,
             );
             $this->workerJobRepository->save($imageJob, false);
@@ -160,8 +197,6 @@ final readonly class ImportService
 
         $this->em->flush();
 
-        foreach ($product->getImages() as $image) {
-            $this->bus->dispatch(new DownloadProductImageMessage($image->getId()));
-        }
+        return $imageIds;
     }
 }

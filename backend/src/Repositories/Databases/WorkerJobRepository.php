@@ -30,8 +30,8 @@ final readonly class WorkerJobRepository implements WorkerJobRepositoryInterface
         $rsm->addEntityResult(WorkerJob::class, 'w');
         $rsm->addFieldResult('w', 'id', 'id');
         $rsm->addFieldResult('w', 'job_id', 'jobId');
-        $rsm->addFieldResult('w', 'type', 'type', WorkerJobType::class);
-        $rsm->addFieldResult('w', 'status', 'status', WorkerJobStatus::class);
+        $rsm->addFieldResult('w', 'type', 'type' );
+        $rsm->addFieldResult('w', 'status', 'status');
         $rsm->addFieldResult('w', 'message', 'message');
         $rsm->addFieldResult('w', 'created_at', 'createdAt');
         $rsm->addFieldResult('w', 'updated_at', 'updatedAt');

@@ -23,7 +23,17 @@ final readonly class TransportFactory
 
         return $factory->createTransport(
             $this->rabbitMqDsn . '/' . $queueName,
-            [],
+            [
+                'exchange' => [
+                    'name' => 'messages',
+                    'type' => 'direct',
+                ],
+                'queues' => [
+                    $queueName => [
+                        'binding_keys' => [$queueName],
+                    ],
+                ],
+            ],
             $serializer,
         );
     }

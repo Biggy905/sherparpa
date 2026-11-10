@@ -6,7 +6,6 @@ namespace App\Factories;
 
 use App\Messages\DownloadProductImageMessage;
 use App\Messages\ImportProductsMessage;
-use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpTransport;
 use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpTransportFactory;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
@@ -27,35 +26,26 @@ final readonly class MessageBusFactory
         $serializer = new PhpSerializer();
         $transportFactory = new AmqpTransportFactory();
 
-        $importTransport = $transportFactory->createTransport(
-            $this->rabbitMqDsn . '/import',
-            [],
-            $serializer,
-        );
+        $importTransport = $transportFactory->createTransport($this->rabbitMqDsn . '/import', [], $serializer);
+        $imagesTransport = $transportFactory->createTransport($this->rabbitMqDsn . '/images', [], $serializer);
 
-        $imagesTransport = $transportFactory->createTransport(
-            $this->rabbitMqDsn . '/images',
-            [],
-            $serializer,
-        );
-
+        // Свой локатор: просто возвращает готовые транспорты, без контейнеров и алиасов
         $sendersLocator = new class ($importTransport, $imagesTransport) implements SendersLocatorInterface {
             public function __construct(
-                private readonly AmqpTransport $importTransport,
-                private readonly AmqpTransport $imagesTransport,
-            ) {
-            }
+                private readonly \Symfony\Component\Messenger\Transport\Sender\SenderInterface $importTransport,
+                private readonly \Symfony\Component\Messenger\Transport\Sender\SenderInterface $imagesTransport,
+            ) {}
 
             public function getSenders(Envelope $envelope): iterable
             {
                 $message = $envelope->getMessage();
 
                 if ($message instanceof ImportProductsMessage) {
-                    yield 'import' => $this->importTransport;
+                    yield $this->importTransport;
                 }
 
                 if ($message instanceof DownloadProductImageMessage) {
-                    yield 'images' => $this->imagesTransport;
+                    yield $this->imagesTransport;
                 }
             }
         };
