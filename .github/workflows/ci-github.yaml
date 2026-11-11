@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Tests & Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create external network
+        run: docker network create sherparpa-network
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create .env file
+        run: cp .env.example .env
+
+      - name: Build and start containers
+        run: docker compose up -d sherparpa-postgres sherparpa-rabbitmq sherparpa-php-fpm sherparpa-php-cli
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          echo "Waiting for PostgreSQL..."
+          until docker compose exec -T sherparpa-postgres pg_isready -h 127.0.0.1 -U postgres; do
+            sleep 2
+          done
+
+      - name: Create test database
+        run: docker compose exec -T sherparpa-postgres psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE import_export_test;"
+
+      - name: Fix permissions
+        run: sudo chown -R $(id -u):$(id -g) .
+
+      - name: Install Composer dependencies
+        run: docker compose exec -T sherparpa-php-cli composer --working-dir=/app/backend install --no-interaction
+
+      - name: Run PHPStan
+        run: docker compose exec -T sherparpa-php-cli composer --working-dir=/app/backend phpstan
+
+      - name: Run PHPUnit tests
+        run: docker compose exec -T sherparpa-php-cli composer --working-dir=/app/backend test
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down -v
