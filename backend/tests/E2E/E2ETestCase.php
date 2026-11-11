@@ -70,12 +70,12 @@ abstract class E2ETestCase extends TestCase
 
         \Slim\Factory\AppFactory::setContainer($container);
         $app = \Slim\Factory\AppFactory::create();
-
         $app->addBodyParsingMiddleware();
         $app->addRoutingMiddleware();
-        $app->addErrorMiddleware(true, true, true);
+        $app->add(\App\Middlewares\ErrorHandlerMiddleware::class);
+        $app->addErrorMiddleware(false, false, false);
 
-        (require $rootDir . '/src/Config/routes.php')($app);
+        (require $rootDir . '/backend/src/Config/routes.php')($app);
 
         return $app;
     }
@@ -114,10 +114,14 @@ abstract class E2ETestCase extends TestCase
 
     protected function postFile(string $uri, string $filePath, string $fieldName = 'file'): \Psr\Http\Message\ResponseInterface
     {
-        $stream = (new StreamFactory())->createStreamFromFile($filePath, 'r');
+        // Создаем временную копию, чтобы не удалять оригинал
+        $tempPath = tempnam(sys_get_temp_dir(), 'test_xlsx_');
+        copy($filePath, $tempPath);
+
+        $stream = (new StreamFactory())->createStreamFromFile($tempPath, 'r');
         $uploaded = (new UploadedFileFactory())->createUploadedFile(
             $stream,
-            \filesize($filePath) ?: 0,
+            \filesize($tempPath) ?: 0,
             UPLOAD_ERR_OK,
             \basename($filePath),
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

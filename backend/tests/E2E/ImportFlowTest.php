@@ -13,7 +13,7 @@ final class ImportFlowTest extends E2ETestCase
 {
     public function testFullImportFlow(): void
     {
-        $fixture = __DIR__ . '/../fixtures/import_example.xlsx';
+        $fixture = dirname(__DIR__) . '/files/import_example_ok.xlsx';
         self::assertFileExists($fixture);
 
         // 1. POST /api/imports
@@ -68,7 +68,7 @@ final class ImportFlowTest extends E2ETestCase
 
         /** @var array{external_code: string, attributes: array<string, mixed>, images: list<mixed>} $detail */
         $detail = $this->json($detailResponse);
-        self::assertSame('3UHfAid1jaMiwgBuNvnsf3', $detail['external_code']);
+        self::assertSame('AN-AZxf2i24obi-6ehzeU0', $detail['external_code']);
         self::assertArrayHasKey('attributes', $detail);
         self::assertArrayHasKey('images', $detail);
     }

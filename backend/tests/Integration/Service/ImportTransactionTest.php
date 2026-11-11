@@ -15,16 +15,15 @@ final class ImportTransactionTest extends IntegrationTestCase
     public function testRollbackOnlyFailedRow(): void
     {
         $productRepository = new ProductRepository($this->em);
-        $workerJobRepository = new WorkerJobRepository($this->em);
 
-        // Строка 1 — валидная, коммитится
+        // Строка 1 — валидная
         $this->em->wrapInTransaction(function () use ($productRepository): void {
             $product = Product::create('EXT-001', 'Valid', null, '100.00', '0.00');
             $productRepository->save($product, false);
             $this->em->flush();
         });
 
-        // Строка 2 — невалидная, откатывается
+        // Строка 2 — невалидная
         try {
             $this->em->wrapInTransaction(function () use ($productRepository): void {
                 $product = Product::create('EXT-002', 'Invalid', null, '100.00', '0.00');
@@ -36,14 +35,20 @@ final class ImportTransactionTest extends IntegrationTestCase
             // ожидаемо
         }
 
-        // Строка 3 — валидная, коммитится
+        // ВАЖНО: после исключения EntityManager закрывается, пересоздаем его
+        if (!$this->em->isOpen()) {
+            $this->em = (new \App\Factories\EntityManagerFactory(\dirname(__DIR__, 3)))->create();
+            $productRepository = new ProductRepository($this->em);
+        }
+
+        // Строка 3 — валидная
         $this->em->wrapInTransaction(function () use ($productRepository): void {
             $product = Product::create('EXT-003', 'Valid', null, '100.00', '0.00');
             $productRepository->save($product, false);
             $this->em->flush();
         });
 
-        // Строка 1 и 3 на месте, строка 2 откатилась
+        // Проверяем
         $query = $this->em->createQueryBuilder()
             ->select('p.externalCode')
             ->from(Product::class, 'p')
